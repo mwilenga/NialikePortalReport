@@ -37,8 +37,8 @@ if ($show_results && !empty($event_pin)) {
             // Get guest data with attendance statistics
             $sql = "SELECT 
                 g.name, g.phone_number, g.recipient_msisdn,
-                g.card_number, g.card_url, g.arrive_count,
-                g.wa_message_status, g.sms_message_status, g.attendance_feedback 
+                g.type, g.card_number, g.card_url, g.arrive_count,
+                g.wa_message_status, g.sms_message_status, g.attendance_feedback
                 FROM event_guests g
                 WHERE g.event_id = ?";
             $stmt = $conn->prepare($sql);
@@ -497,7 +497,7 @@ $datatables_js = "
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="mb-0">
                                     <i class="bi bi-list-ul me-2"></i>Guest List
-                                    <span class="badge bg-primary rounded-pill ms-2"><?php echo $result->num_rows; ?> Guests</span>
+                                    <span class="badge bg-primary rounded-pill ms-2"><?php echo $result->num_rows; ?> Total</span>
                                 </h6>
                                 <a href="?event_pin=<?php echo urlencode($event_pin); ?>&export=csv" class="btn btn-sm btn-success">
                                     <i class="bi bi-download me-1"></i> Export CSV
@@ -513,6 +513,7 @@ $datatables_js = "
                                             $column_names = [
                                                 'name' => 'Guest Name',
                                                 'phone_number' => 'Phone Number',
+                                                'type' => 'Card Type',
                                                 'card_number' => 'Card Number',
                                                 'card_url' => 'Digital Card',
                                                 'arrive_count' => 'Attended Guests',
