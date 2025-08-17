@@ -146,7 +146,7 @@ if ($show_results && !empty($event_pin)) {
         
         if (!empty($event_pin)) {
             // First, get the event_id for the given event_pin
-            $sql = "SELECT id FROM event_pins WHERE event_pin = ? LIMIT 1";
+            $sql = "SELECT event_id FROM event_pins WHERE event_pin = ? LIMIT 1";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param('s', $event_pin);
             $stmt->execute();
@@ -154,15 +154,22 @@ if ($show_results && !empty($event_pin)) {
             
             if ($pin_result->num_rows > 0) {
                 $event_data = $pin_result->fetch_assoc();
-                $event_id = $event_data['id'];
+                $event_id = $event_data['event_id'];
                 
-                // Now get the guest data using the event_id
+                // Get only the fields that are visible in the report
                 $sql = "SELECT 
-                    g.name, g.phone_number, 
-                    g.card_number, g.card_url, 
-                    g.wa_message_status, g.sms_message_status, g.attendance_feedback 
-                    FROM event_guests g
-                    WHERE g.event_id = ?";
+                    g.name, 
+                    g.phone_number,
+                    g.recipient_msisdn,
+                    g.type, 
+                    g.card_number, 
+                    g.card_url, 
+                    g.arrive_count,
+                    g.wa_message_status, 
+                    g.sms_message_status, 
+                    g.attendance_feedback
+                FROM event_guests g 
+                WHERE g.event_id = ?";
                 $stmt = $conn->prepare($sql);
                 $stmt->bind_param('i', $event_id);
                 $stmt->execute();
@@ -171,17 +178,43 @@ if ($show_results && !empty($event_pin)) {
                 $error_message = "No event found with the provided pin.";
             }
             
-            // Get column names
-            $columns = $result->fetch_fields();
-            $header = array();
-            foreach ($columns as $column) {
-                $header[] = $column->name;
+            // Get column names and filter out recipient_msisdn
+            $columns = [];
+            $header = [];
+            $column_names = [
+                'name' => 'Guest Name',
+                'phone_number' => 'Phone Number',
+                'type' => 'Card Type',
+                'card_number' => 'Card Number',
+                'card_url' => 'Digital Card',
+                'arrive_count' => 'Attended Guests',
+                'wa_message_status' => 'WhatsApp',
+                'sms_message_status' => 'SMS',
+                'attendance_feedback' => 'Attendance'
+            ];
+            
+            // Get all fields from the result
+            $fields = $result->fetch_fields();
+            foreach ($fields as $field) {
+                if ($field->name !== 'recipient_msisdn') {
+                    $columns[] = $field;
+                    $header[] = $column_names[$field->name] ?? ucwords(str_replace('_', ' ', $field->name));
+                }
             }
             
             // Prepare data
             $data = array($header);
             while ($row = $result->fetch_assoc()) {
-                $data[] = array_values($row);
+                $row_data = [];
+                foreach ($columns as $column) {
+                    // Use recipient_msisdn if available for phone_number
+                    if ($column->name === 'phone_number' && !empty($row['recipient_msisdn'])) {
+                        $row_data[] = $row['recipient_msisdn'];
+                    } else {
+                        $row_data[] = $row[$column->name];
+                    }
+                }
+                $data[] = $row_data;
             }
             
             // Export as CSV
