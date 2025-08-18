@@ -1,6 +1,6 @@
 <?php
+// echo "hellow world";exit;
 require_once 'db.php';
-
 // Test database connection
 try {
     $conn = connectToDatabase();

@@ -1,17 +1,7 @@
 <?php
-// Load database configuration from secure location
-$config = require dirname(__DIR__) . '/config/database.php';
-
-// Define constants for backward compatibility
-define('DB_HOST', $config['host']);
-define('DB_USER', $config['username']);
-define('DB_PASS', $config['password']);
-define('DB_NAME', $config['database']);
-define('DB_PORT', $config['port']);
-
 // Function to connect to the main database
 function connectToDatabase() {
-    $config = require dirname(__DIR__) . '/config/database.php';
+    $config = require_once 'config/database.php';
     
     $conn = new mysqli(
         $config['host'],
