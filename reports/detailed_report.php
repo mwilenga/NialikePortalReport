@@ -2,8 +2,8 @@
 require_once dirname(__DIR__) . '/db.php';
 
 // Initialize variables
-$event_pin = isset($_POST['event_pin']) ? trim($_POST['event_pin']) : '';
-$show_results = isset($_POST['submit']);
+$event_pin = isset($_GET['event_pin']) ? trim($_GET['event_pin']) : '';
+$show_results = !empty($event_pin);
 $result = null;
 $error_message = null;
 $event_id = 0;
@@ -36,9 +36,10 @@ if ($show_results && !empty($event_pin)) {
             
             // Get guest data with attendance statistics
             $sql = "SELECT 
-                g.name, g.phone_number, g.recipient_msisdn,
+                g.id, g.name, g.phone_number, g.recipient_msisdn,
                 g.type, g.card_number, g.card_url, g.arrive_count,
-                g.wa_message_status, g.sms_message_status, g.attendance_feedback
+                g.wa_message_status, g.sms_message_status, 
+                COALESCE(NULLIF(g.call_attendance_feedback, ''), g.attendance_feedback) as feedback
                 FROM event_guests g
                 WHERE g.event_id = ?";
             $stmt = $conn->prepare($sql);
@@ -233,32 +234,31 @@ if ($show_results && !empty($event_pin)) {
     }
 }
 
-// Initialize variables for DataTables
-$datatables_js = "
-<script>
-    $(document).ready(function() {
-        if ($('#guestsTable').length) {
-            $('#guestsTable').DataTable({
-                \"pageLength\": 100,
-                \"responsive\": true,
-                \"dom\": '<\"top\"lfrtip>',
-                \"lengthMenu\": [
-                    [25, 50, 100, 200, 300, 500, -1],
-                    ['25 rows', '50 rows', '100 rows', '200 rows', '300 rows', '500 rows', 'Show all']
-                ],
-                \"language\": {
-                    \"paginate\": {
-                        \"previous\": '<i class=\"fas fa-arrow-left\"></i>',
-                        \"next\": '<i class=\"fas fa-arrow-right\"></i>',
-                        \"first\": '<i class=\"fas fa-fast-backward\"></i>',
-                        \"last\": '<i class=\"fas fa-fast-forward\"></i>'
-                    }
-                }
-            });
-        }
-    });
-</script>";
+// Function to get status class for PHP
+function getStatusClass($status) {
+    if (empty($status)) return 'secondary';
+    
+    $status = strtolower(trim($status));
+    if ($status === 'asante, nitafika') {
+        return 'success';
+    } else if ($status === 'sitoweza kufika') {
+        return 'danger';
+    } else if ($status === 'sina uhakika') {
+        return 'warning';
+    } else if ($status === 'call again to confirm') {
+        return 'info';
+    } else if ($status === 'attended') {
+        return 'success';
+    } else if ($status === 'not attended') {
+        return 'secondary';
+    } else if ($status === 'cancelled') {
+        return 'danger';
+    } else {
+        return 'secondary';
+    }
+}
 
+// DataTables initialization is now in the JavaScript section below
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -348,18 +348,20 @@ $datatables_js = "
                                 <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
                             </a>
                         </div>
-                        <form method="POST" class="mb-4">
+                        <form method="GET" class="mb-4">
                             <div class="row g-3 align-items-end">
-                                <div class="col-md-4">
-                                    <label for="event_pin" class="form-label small fw-bold text-muted mb-1">Event PIN</label>
+                                <div class="col-md-8">
+                                    <label for="event_pin" class="form-label">Event PIN</label>
                                     <div class="input-group">
                                         <span class="input-group-text"><i class="bi bi-key"></i></span>
-                                        <input type="text" class="form-control" id="event_pin" name="event_pin" required 
-                                               value="<?php echo htmlspecialchars($event_pin); ?>" placeholder="Enter event PIN">
-                                        <button type="submit" name="submit" class="btn btn-primary">
-                                            <i class="bi bi-file-earmark-text me-1"></i> Generate Report
-                                        </button>
+                                        <input type="text" class="form-control" id="event_pin" name="event_pin" 
+                                               value="<?php echo isset($_GET['event_pin']) ? htmlspecialchars($_GET['event_pin']) : ''; ?>" required>
                                     </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-search me-1"></i> Generate Report
+                                    </button>
                                 </div>
                             </div>
                         </form>
@@ -373,7 +375,7 @@ $datatables_js = "
 
                         <?php if ($show_results && $result): ?>
                             <!-- Attendance Summary -->
-                            <div class="card mb-4">
+                            <div id="attendanceSummary" class="card mb-4">
                                 <div class="card-body">
                                     <h5 class="card-title mb-3">
                                         <i class="bi bi-graph-up me-2"></i>Attendance Summary
@@ -449,11 +451,19 @@ $datatables_js = "
                                     <?php 
                                     // Get attendance status summary from database
                                     $attendance_sql = "SELECT 
-                                        COALESCE(attendance_feedback, 'not_specified') as status,
+                                        COALESCE(
+                                            NULLIF(call_attendance_feedback, ''), 
+                                            NULLIF(attendance_feedback, ''), 
+                                            'not_specified'
+                                        ) as status,
                                         COUNT(*) as count
                                     FROM event_guests 
                                     WHERE event_id = ?
-                                    GROUP BY attendance_feedback";
+                                    GROUP BY COALESCE(
+                                        NULLIF(call_attendance_feedback, ''), 
+                                        NULLIF(attendance_feedback, ''), 
+                                        'not_specified'
+                                    )";
                                     
                                     $stmt = $conn->prepare($attendance_sql);
                                     $stmt->bind_param('i', $event_id);
@@ -462,12 +472,18 @@ $datatables_js = "
                                     $attendance_data = [];
                                     
                                     while ($row = $attendance_result->fetch_assoc()) {
+                                        $status = $row['status'] === 'not_specified' ? 'Not Specified' : $row['status'];
                                         $attendance_data[] = [
-                                            'status' => ucfirst(str_replace('_', ' ', $row['status'])),
+                                            'status' => $status,
                                             'count' => (int)$row['count'],
-                                            'percentage' => $total_guests > 0 ? round(($row['count'] / $total_guests) * 100, 2) : 0
+                                            'percentage' => $total_guests > 0 ? round(($row['count'] / $total_guests) * 100, 1) : 0
                                         ];
                                     }
+                                    
+                                    // Sort by count in descending order
+                                    usort($attendance_data, function($a, $b) {
+                                        return $b['count'] - $a['count'];
+                                    });
                                     
                                     if (!empty($attendance_data)): 
                                     ?>
@@ -541,6 +557,7 @@ $datatables_js = "
                                 <table id="guestsTable" class="table table-hover align-middle">
                                     <thead class="table-light">
                                         <tr>
+                                            <th class="small text-muted">ID</th>
                                             <?php
                                             // Define user-friendly column names
                                             $column_names = [
@@ -552,14 +569,14 @@ $datatables_js = "
                                                 'arrive_count' => 'Attended Guests',
                                                 'wa_message_status' => 'WhatsApp',
                                                 'sms_message_status' => 'SMS',
-                                                'attendance_feedback' => 'Attendance'
+                                                'feedback' => 'ATTENDANCE FEEDBACK'
                                             ];
                                             
-                                            // Get column names from the result and filter out recipient_msisdn
+                                            // Get column names from the result and filter out recipient_msisdn and id
                                             $columns = [];
                                             $fields = $result->fetch_fields();
                                             foreach ($fields as $field): 
-                                                if ($field->name !== 'recipient_msisdn'): 
+                                                if ($field->name !== 'recipient_msisdn' && $field->name !== 'id'): 
                                                     $columns[] = $field;
                                                     $display_name = $column_names[$field->name] ?? ucwords(str_replace('_', ' ', $field->name));
                                                     ?>
@@ -568,15 +585,24 @@ $datatables_js = "
                                                 endif;
                                             endforeach; 
                                             ?>
+                                            <th class="small text-muted">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php 
+                                        $counter = 1; // Initialize counter for ID column
+                                        $result->data_seek(0); // Reset result pointer to beginning
                                         while ($row = $result->fetch_assoc()) {
-                                            echo '<tr>';
+                                            $feedback = $row['feedback'] ?? '';
+                                            $statusClass = getStatusClass($feedback);
+                                            
+                                            echo '<tr data-guest-id="' . htmlspecialchars($row['id']) . '">';
+                                            // Add the sequential number as the first cell in the row
+                                            echo '<td>' . $counter++ . '</td>';
                                             foreach ($columns as $column) {
                                                 echo '<td>';
-                                                $value = $row[$column->name];
+                                                $value = $row[$column->name] ?? '';
+                                                
                                                 if ($column->name === 'phone_number' && !empty($row['recipient_msisdn'])) {
                                                     echo htmlspecialchars($row['recipient_msisdn']);
                                                 } elseif ($column->name === 'card_url' && !empty($value)) { 
@@ -599,33 +625,65 @@ $datatables_js = "
                                                                 'pending' => 'Pending',
                                                                 'not_sent' => 'Not Sent'
                                                             ];
-                                                            $display_value = $status_map[$status_value] ?? ucfirst($status_value);
-                                                            $status_class = 'bg-' . str_replace('_', '-', $status_value);
-                                                            echo '<span class="status-badge ' . $status_class . '">' . htmlspecialchars($display_value) . '</span>';
+                                                            $status_text = $status_map[$status_value] ?? ucfirst($status_value);
+                                                            $status_class = strtolower($status_value);
+                                                            echo '<span class="badge bg-' . ($status_class === 'delivered' || $status_class === 'read' ? 'success' : 
+                                                                  ($status_class === 'failed' ? 'danger' : 
+                                                                  ($status_class === 'pending' ? 'warning' : 'secondary'))) . '">' . 
+                                                                  htmlspecialchars($status_text) . '</span>';
                                                             break;
-                                                                
-                                                        case 'attendance_feedback':
-                                                            $feedback_map = [
-                                                                'attended' => 'Attended',
-                                                                'not_attended' => 'Not Attended',
-                                                                'cancelled' => 'Cancelled'
-                                                            ];
-                                                            $display_value = $feedback_map[$status_value] ?? ucfirst($status_value);
-                                                            $status_class = 'bg-' . str_replace('_', '-', $status_value);
-                                                            echo '<span class="status-badge ' . $status_class . '">' . htmlspecialchars($display_value) . '</span>';
+                                                        case 'arrive_count':
+                                                            echo $value > 0 ? '<span class="badge bg-success">Yes (' . $value . ')</span>' : '<span class="badge bg-secondary">No</span>';
                                                             break;
-                                                                
+                                                        case 'feedback':
+                                                            echo $feedback ? htmlspecialchars($feedback) : '-';
+                                                            break;
                                                         default:
                                                             echo htmlspecialchars($value);
                                                     }
                                                 }
                                                 echo '</td>';
                                             }
+                                            
+                                            // Action button
+                                            echo '<td class="text-nowrap"><button class="btn btn-link p-0 border-0 bg-transparent update-status-btn" data-bs-toggle="modal" data-bs-target="#statusModal" title="' . ($feedback ? 'Update status' : 'Set status') . '">' . 
+                                                 '<i class="bi bi-pencil-square ' . $statusClass . '"></i></button></td>';
                                             echo '</tr>';
                                         }
-                                        ?>
-                                    </tbody>
+                                    ?>
                                 </table>
+
+                                <!-- Status Update Modal -->
+                                <div class="modal fade" id="statusModal" tabindex="-1" aria-labelledby="statusModalLabel" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="statusModalLabel">Update Call Status</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <input type="hidden" id="guestId">
+                                                <div class="mb-3">
+                                                    <label for="callStatus" class="form-label">Select Status</label>
+                                                    <select class="form-select" id="callStatus" required>
+                                                        <option value="" selected disabled>-- Select Status --</option>
+                                                        <option value="Asante, nitafika">Asante, nitafika</option>
+                                                        <option value="Sitoweza kufika">Sitoweza kufika</option>
+                                                        <option value="Sina uhakika">Sina uhakika</option>
+                                                        <option value="Call to Confirm">Call to Confirm</option>
+                                                    </select>
+                                                    <div class="invalid-feedback">
+                                                        Please select a status
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                                <button type="button" class="btn btn-primary" id="saveStatusBtn">Save changes</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -637,7 +695,168 @@ $datatables_js = "
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script>
+    // Define getStatusClass globally so it can be used in PHP
+    function getStatusClass(status) {
+        if (!status) return 'secondary';
+        
+        status = status.toLowerCase().trim();
+        if (status === 'asante, nitafika') {
+            return 'success';
+        } else if (status === 'sitoweza kufika') {
+            return 'danger';
+        } else if (status === 'sina uhakika') {
+            return 'warning';
+        } else if (status === 'call again to confirm') {
+            return 'info';
+        } else if (status === 'attended') {
+            return 'success';
+        } else if (status === 'not attended') {
+            return 'secondary';
+        } else if (status === 'cancelled') {
+            return 'danger';
+        } else {
+            return 'secondary';
+        }
+    }
+
+    // Function to refresh the attendance summary
+    function refreshAttendanceSummary() {
+        $.ajax({
+            url: 'get_attendance_summary.php',
+            type: 'GET',
+            data: { event_pin: '<?php echo $event_pin; ?>' },
+            success: function(summaryHtml) {
+                $('#attendanceSummary').replaceWith(summaryHtml);
+            },
+            error: function() {
+                console.error('Failed to refresh attendance summary');
+            }
+        });
+    }
+
+    // Restore scroll position if it was saved
+    $(document).ready(function() {
+        var savedScrollPosition = sessionStorage.getItem('scrollPosition');
+        var savedEventPin = sessionStorage.getItem('eventPin');
+        var currentEventPin = '<?php echo $event_pin; ?>';
+        
+        // Only restore position if we're on the same event
+        if (savedScrollPosition !== null && savedEventPin === currentEventPin) {
+            // Use setTimeout to ensure the DOM is fully loaded
+            setTimeout(function() {
+                window.scrollTo(0, savedScrollPosition);
+                // Clear the saved position
+                sessionStorage.removeItem('scrollPosition');
+            }, 1);
+        }
+        // Initialize DataTable only if not already initialized
+        if (!$.fn.DataTable.isDataTable('#guestsTable')) {
+            var table = $('#guestsTable').DataTable({
+                responsive: true,
+                columnDefs: [
+                    { orderable: false, targets: -1 } // Make action column not sortable
+                ],
+                order: [[0, 'asc']], // Sort by first column by default
+                pageLength: 50,
+                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']]
+            });
+        }
+
+        // Initialize the modal once
+        var statusModal = new bootstrap.Modal(document.getElementById('statusModal'));
+
+        // Show status modal
+        $(document).on('click', '.update-status-btn', function() {
+            var $row = $(this).closest('tr');
+            var guestId = $row.data('guest-id');
+            var currentStatus = $row.find('td:has(.bi-pencil-square)').siblings('span').text().trim();
+            
+            $('#guestId').val(guestId);
+            var $statusSelect = $('#callStatus');
+            
+            // Reset the select to show the default option
+            $statusSelect.prop('selectedIndex', 0);
+            
+            // If there's a current status, select it
+            if (currentStatus) {
+                $statusSelect.val(currentStatus);
+                // If the value wasn't found in the options, reset to default
+                if ($statusSelect.val() === null) {
+                    $statusSelect.prop('selectedIndex', 0);
+                }
+            }
+            
+            // Reset validation state
+            $statusSelect.removeClass('is-invalid');
+            
+            statusModal.show();
+        });
+
+        // Save status
+        $('#saveStatusBtn').click(function() {
+            var guestId = $('#guestId').val();
+            var status = $('#callStatus').val();
+            
+            if (!status) {
+                alert('Please select a status');
+                return;
+            }
+            
+            var $saveBtn = $(this);
+            var originalText = $saveBtn.html();
+            $saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
+            
+            $.ajax({
+                url: 'update_call_status.php',
+                type: 'POST',
+                data: {
+                    guest_id: guestId,
+                    status: status
+                },
+                dataType: 'json',
+                success: function(response) {
+                    $saveBtn.prop('disabled', false).html(originalText);
+                    
+                    if (response.success) {
+                        // Get current scroll position
+                        var scrollPosition = window.scrollY || document.documentElement.scrollTop;
+                        
+                        // Store the scroll position in sessionStorage
+                        sessionStorage.setItem('scrollPosition', scrollPosition);
+                        
+                        // Store the event_pin in sessionStorage
+                        var eventPin = '<?php echo $event_pin; ?>';
+                        sessionStorage.setItem('eventPin', eventPin);
+                        
+                        // Redirect to the same page with the event_pin
+                        window.location.href = 'detailed_report.php?event_pin=' + encodeURIComponent(eventPin);
+                    } else {
+                        alert('Error updating status: ' + (response.message || 'Unknown error'));
+                    }
+                },
+                error: function() {
+                    $saveBtn.prop('disabled', false).html(originalText);
+                    alert('Error updating status. Please try again.');
+                }
+            });
+        });
+    });
+    </script>
     <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
-    <?php echo $datatables_js; ?>
+</div>
+
+<!-- Toast Notification -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="statusToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto">Success</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="toastMessage">
+            Status updated successfully
+        </div>
+    </div>
+</div>
 </body>
 </html>

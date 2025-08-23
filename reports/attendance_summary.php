@@ -59,11 +59,19 @@ if ($show_results) {
                 
                 // 4. Get attendance summary
                 $attendance_sql = "SELECT 
-                                    COALESCE(attendance_feedback, 'not_specified') as status,
+                                    COALESCE(
+                                        NULLIF(call_attendance_feedback, ''), 
+                                        NULLIF(attendance_feedback, ''), 
+                                        'not_specified'
+                                    ) as status,
                                     COUNT(*) as count
                                   FROM event_guests 
                                   WHERE event_id = ?
-                                  GROUP BY attendance_feedback";
+                                  GROUP BY COALESCE(
+                                      NULLIF(call_attendance_feedback, ''), 
+                                      NULLIF(attendance_feedback, ''), 
+                                      'not_specified'
+                                  )";
                 
                 $stmt = $conn->prepare($attendance_sql);
                 $stmt->bind_param('i', $event_id);
@@ -77,12 +85,18 @@ if ($show_results) {
                 $sms_delivered = 0;
                 
                 while ($row = $attendance_result->fetch_assoc()) {
+                    $status = $row['status'] === 'not_specified' ? 'Not Specified' : $row['status'];
                     $attendance_data[] = [
-                        'status' => ucfirst(str_replace('_', ' ', $row['status'])),
+                        'status' => $status,
                         'count' => (int)$row['count'],
-                        'percentage' => round(($row['count'] / $total_guests) * 100, 2)
+                        'percentage' => round(($row['count'] / $total_guests) * 100, 1)
                     ];
                 }
+                
+                // Sort by count in descending order
+                usort($attendance_data, function($a, $b) {
+                    return $b['count'] - $a['count'];
+                });
                 
                 // Calculate attendance rate
                 $attendance_rate = $total_guests > 0 ? round(($attended / $total_guests) * 100) : 0;
@@ -247,18 +261,20 @@ if ($show_results) {
                             </a>
                             
                         </div>
-                        <form method="get" class="mb-4">
+                        <form method="GET" class="mb-4">
                             <div class="row g-3 align-items-end">
-                                <div class="col-md-4">
-                                    <label for="event_pin" class="form-label small fw-bold text-muted mb-1">Event PIN</label>
+                                <div class="col-md-8">
+                                    <label for="event_pin" class="form-label">Event PIN</label>
                                     <div class="input-group">
                                         <span class="input-group-text"><i class="bi bi-key"></i></span>
-                                        <input type="text" class="form-control" id="event_pin" name="event_pin" required 
-                                               value="<?php echo htmlspecialchars($event_pin); ?>" placeholder="Enter event PIN">
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="bi bi-search me-1"></i> Search
-                                        </button>
+                                        <input type="text" class="form-control" id="event_pin" name="event_pin" 
+                                               value="<?php echo isset($_GET['event_pin']) ? htmlspecialchars($_GET['event_pin']) : ''; ?>" required>
                                     </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-search me-1"></i> Generate Report
+                                    </button>
                                 </div>
                             </div>
                         </form>
