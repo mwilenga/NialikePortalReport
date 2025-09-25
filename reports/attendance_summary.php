@@ -39,7 +39,7 @@ if ($show_results) {
                             COALESCE(SUM(card_count), 0) as total_guests,
                             SUM(CASE WHEN card_number IS NOT NULL AND card_number != '' THEN 1 ELSE 0 END) as total_cards
                           FROM event_guests 
-                          WHERE event_id = ?";
+                          WHERE event_id = ? AND (is_deleted <> 1 OR is_deleted IS NULL)";
             $count_stmt = $conn->prepare($count_sql);
             $count_stmt->bind_param('i', $event_id);
             $count_stmt->execute();
@@ -49,7 +49,7 @@ if ($show_results) {
             
             if ($total_guests > 0) {
                 // 3. Get attended count (sum of arrive_count)
-                $arrived_sql = "SELECT COALESCE(SUM(arrive_count), 0) as total_arrived FROM event_guests WHERE event_id = ?";
+                $arrived_sql = "SELECT COALESCE(SUM(arrive_count), 0) as total_arrived FROM event_guests WHERE event_id = ? AND is_deleted = 0";
                 $stmt = $conn->prepare($arrived_sql);
                 $stmt->bind_param('i', $event_id);
                 $stmt->execute();
@@ -66,7 +66,7 @@ if ($show_results) {
                                     ) as status,
                                     COUNT(*) as count
                                   FROM event_guests 
-                                  WHERE event_id = ?
+                                  WHERE event_id = ? AND is_deleted = 0
                                   GROUP BY COALESCE(
                                       NULLIF(call_attendance_feedback, ''), 
                                       NULLIF(attendance_feedback, ''), 
@@ -106,7 +106,7 @@ if ($show_results) {
                                 COALESCE(wa_message_status, 'not_sent') as status,
                                 COUNT(*) as count
                               FROM event_guests 
-                              WHERE event_id = ?
+                              WHERE event_id = ? AND is_deleted = 0
                               GROUP BY wa_message_status";
                 
                 error_log("WhatsApp SQL: " . $whatsapp_sql);
@@ -153,7 +153,7 @@ if ($show_results) {
                             COALESCE(sms_message_status, 'not_sent') as status,
                             COUNT(*) as count
                           FROM event_guests 
-                          WHERE event_id = ?
+                          WHERE event_id = ? AND is_deleted = 0
                           GROUP BY sms_message_status";
                 
                 $stmt = $conn->prepare($sms_sql);

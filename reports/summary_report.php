@@ -13,7 +13,7 @@ if ($show_results && !empty($event_pin)) {
         $conn = connectToDatabase();
         
         // First, get the event_id and event name for the given event_pin
-        $sql = "SELECT ep.id, e.name 
+        $sql = "SELECT ep.event_id as event_id, e.name 
                 FROM event_pins ep 
                 JOIN events e ON e.id = ep.event_id 
                 WHERE ep.event_pin = ? 
@@ -25,7 +25,7 @@ if ($show_results && !empty($event_pin)) {
         
         if ($pin_result->num_rows > 0) {
             $event_data = $pin_result->fetch_assoc();
-            $event_id = $event_data['id'];
+            $event_id = (int)$event_data['event_id'];
             $event_name = $event_data['name'] ?? 'Event';
             
             // Get summary data grouped by attendance, whatsapp, and sms statuses
@@ -35,7 +35,7 @@ if ($show_results && !empty($event_pin)) {
                         COALESCE(wa_message_status, 'not_sent') as whatsapp_status,
                         COALESCE(sms_message_status, 'not_sent') as sms_status
                     FROM event_guests 
-                    WHERE event_id = ?
+                    WHERE event_id = ? AND is_deleted = 0
                     GROUP BY attendance_feedback, wa_message_status, sms_message_status
                     ORDER BY attendance_feedback, wa_message_status, sms_status";
                     

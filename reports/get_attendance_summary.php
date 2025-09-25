@@ -25,33 +25,33 @@ try {
     // Get attendance summary
     $event_id = $event['event_id'];
     
-    // Total guests
-    $stmt = $pdo->prepare("SELECT COUNT(*) as total FROM event_guests WHERE event_id = ?");
+    // Total guests (exclude deleted; treat NULL as not deleted)
+    $stmt = $pdo->prepare("SELECT COUNT(*) as total FROM event_guests WHERE event_id = ? AND (is_deleted <> 1 OR is_deleted IS NULL)");
     $stmt->execute([$event_id]);
     $total_guests = $stmt->fetchColumn();
     
     // Attended guests
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(arrive_count), 0) as attended FROM event_guests WHERE event_id = ? AND arrive_count > 0");
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(arrive_count), 0) as attended FROM event_guests WHERE event_id = ? AND arrive_count > 0 AND is_deleted = 0");
     $stmt->execute([$event_id]);
     $attended = (int)$stmt->fetchColumn();
     
     // WhatsApp sent
-    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM event_guests WHERE event_id = ? AND whatsapp_sent = 1");
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM event_guests WHERE event_id = ? AND whatsapp_sent = 1 AND is_deleted = 0");
     $stmt->execute([$event_id]);
     $wa_sent = (int)$stmt->fetchColumn();
     
     // WhatsApp delivered
-    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM event_guests WHERE event_id = ? AND whatsapp_delivered = 1");
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM event_guests WHERE event_id = ? AND whatsapp_delivered = 1 AND is_deleted = 0");
     $stmt->execute([$event_id]);
     $wa_delivered = (int)$stmt->fetchColumn();
     
     // SMS sent
-    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM event_guests WHERE event_id = ? AND sms_sent = 1");
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM event_guests WHERE event_id = ? AND sms_sent = 1 AND is_deleted = 0");
     $stmt->execute([$event_id]);
     $sms_sent = (int)$stmt->fetchColumn();
     
     // SMS delivered
-    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM event_guests WHERE event_id = ? AND sms_delivered = 1");
+    $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM event_guests WHERE event_id = ? AND sms_delivered = 1 AND is_deleted = 0");
     $stmt->execute([$event_id]);
     $sms_delivered = (int)$stmt->fetchColumn();
     

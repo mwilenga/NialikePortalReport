@@ -41,7 +41,7 @@ if ($show_results && !empty($event_pin)) {
                 g.wa_message_status, g.sms_message_status, 
                 COALESCE(NULLIF(g.call_attendance_feedback, ''), g.attendance_feedback) as feedback
                 FROM event_guests g
-                WHERE g.event_id = ?";
+                WHERE g.event_id = ? AND g.is_deleted = 0";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param('i', $event_id);
             $stmt->execute();
@@ -58,7 +58,7 @@ if ($show_results && !empty($event_pin)) {
             $sms_delivered = 0;
             
             // Get total guests as sum of card_count
-            $total_guests_sql = "SELECT COALESCE(SUM(card_count), 0) as total_guests FROM event_guests WHERE event_id = ?";
+            $total_guests_sql = "SELECT COALESCE(SUM(card_count), 0) as total_guests FROM event_guests WHERE event_id = ? AND (is_deleted <> 1 OR is_deleted IS NULL)";
             $total_guests_stmt = $conn->prepare($total_guests_sql);
             $total_guests_stmt->bind_param('i', $event_id);
             $total_guests_stmt->execute();
@@ -98,7 +98,7 @@ if ($show_results && !empty($event_pin)) {
             }
             
             // Get the sum of arrive_count for this event
-            $sum_sql = "SELECT COALESCE(SUM(arrive_count), 0) as total_arrived FROM event_guests WHERE event_id = ?";
+            $sum_sql = "SELECT COALESCE(SUM(arrive_count), 0) as total_arrived FROM event_guests WHERE event_id = ? AND is_deleted = 0";
             error_log("SQL Query: " . $sum_sql);
             error_log("Event ID: " . $event_id);
             
@@ -170,7 +170,7 @@ if ($show_results && !empty($event_pin)) {
                     g.sms_message_status, 
                     g.attendance_feedback
                 FROM event_guests g 
-                WHERE g.event_id = ?";
+                WHERE g.event_id = ? AND g.is_deleated = 0";
                 $stmt = $conn->prepare($sql);
                 $stmt->bind_param('i', $event_id);
                 $stmt->execute();
@@ -458,7 +458,7 @@ function getStatusClass($status) {
                                         ) as status,
                                         COUNT(*) as count
                                     FROM event_guests 
-                                    WHERE event_id = ?
+                                    WHERE event_id = ? AND is_deleted = 0
                                     GROUP BY COALESCE(
                                         NULLIF(call_attendance_feedback, ''), 
                                         NULLIF(attendance_feedback, ''), 
