@@ -165,16 +165,18 @@ $status_mappings = [
         $(document).ready(function() {
             if ($('#summaryTable').length) {
                 $('#summaryTable').DataTable({
-                    "pageLength": 50,
-                    "responsive": true,
-                    "dom": '<"top"lfrtip>',
-                    "order": [[0, 'asc'], [1, 'asc'], [2, 'asc']],
-                    "language": {
-                        "paginate": {
-                            "previous": '<i class="fas fa-arrow-left"></i>',
-                            "next": '<i class="fas fa-arrow-right"></i>',
-                            "first": '<i class="fas fa-fast-backward"></i>',
-                            "last": '<i class="fas fa-fast-forward"></i>'
+                    pageLength: 50,
+                    responsive: true,
+                    dom: '<"top"lfrtip>',
+                    order: [[0, 'asc'], [1, 'asc'], [2, 'asc']],
+                    stateSave: true,
+                    stateDuration: 0, // store for the session
+                    language: {
+                        paginate: {
+                            previous: '<i class="fas fa-arrow-left"></i>',
+                            next: '<i class="fas fa-arrow-right"></i>',
+                            first: '<i class="fas fa-fast-backward"></i>',
+                            last: '<i class="fas fa-fast-forward"></i>'
                         }
                     }
                 });

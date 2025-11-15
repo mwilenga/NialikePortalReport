@@ -762,6 +762,7 @@ function getStatusClass($status) {
         }
         // Initialize DataTable only if not already initialized
         if (!$.fn.DataTable.isDataTable('#guestsTable')) {
+            var eventPinKey = '<?php echo $event_pin; ?>' || 'no_event_pin';
             var table = $('#guestsTable').DataTable({
                 responsive: true,
                 columnDefs: [
@@ -769,7 +770,21 @@ function getStatusClass($status) {
                 ],
                 order: [[0, 'asc']], // Sort by first column by default
                 pageLength: 50,
-                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']]
+                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+                // Preserve pagination state per event pin
+                stateSave: true,
+                stateDuration: 0, // sessionStorage
+                stateSaveCallback: function(settings, data) {
+                    try {
+                        sessionStorage.setItem('DataTables_guestsTable_' + eventPinKey, JSON.stringify(data));
+                    } catch (e) { /* no-op */ }
+                },
+                stateLoadCallback: function(settings) {
+                    try {
+                        var json = sessionStorage.getItem('DataTables_guestsTable_' + eventPinKey);
+                        return json ? JSON.parse(json) : null;
+                    } catch (e) { return null; }
+                }
             });
         }
 
