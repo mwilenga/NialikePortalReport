@@ -245,6 +245,10 @@ function getStatusClass($status) {
         return 'danger';
     } else if ($status === 'sina uhakika') {
         return 'warning';
+    } else if ($status === 'hapokei/hapatikani') {
+        return 'warning';
+    } else if ($status === 'namba sio sahihi') {
+        return 'danger';
     } else if ($status === 'call again to confirm') {
         return 'info';
     } else if ($status === 'attended') {
@@ -670,6 +674,8 @@ function getStatusClass($status) {
                                                         <option value="Asante, nitafika">Asante, nitafika</option>
                                                         <option value="Sitoweza kufika">Sitoweza kufika</option>
                                                         <option value="Sina uhakika">Sina uhakika</option>
+                                                        <option value="Hapokei/Hapatikani">Hapokei/Hapatikani</option>
+                                                        <option value="Namba Sio Sahihi">Namba Sio Sahihi</option>
                                                         <option value="Call to Confirm">Call to Confirm</option>
                                                     </select>
                                                     <div class="invalid-feedback">
@@ -707,6 +713,10 @@ function getStatusClass($status) {
             return 'danger';
         } else if (status === 'sina uhakika') {
             return 'warning';
+        } else if (status === 'hapokei/hapatikani') {
+            return 'warning';
+        } else if (status === 'namba sio sahihi') {
+            return 'danger';
         } else if (status === 'call again to confirm') {
             return 'info';
         } else if (status === 'attended') {
