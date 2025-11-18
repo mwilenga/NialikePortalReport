@@ -35,13 +35,44 @@ if ($show_results && !empty($event_pin)) {
             error_log("Found event - ID: " . $event_id . ", Name: " . $event_name);
             
             // Get guest data with attendance statistics
-            $sql = "SELECT 
-                g.id, g.name, g.phone_number, g.recipient_msisdn,
-                g.type, g.card_number, g.card_url, g.arrive_count,
-                g.wa_message_status, g.sms_message_status, 
-                COALESCE(NULLIF(g.call_attendance_feedback, ''), g.attendance_feedback) as feedback
-                FROM event_guests g
-                WHERE g.event_id = ? AND g.is_deleted = 0";
+            // Be resilient if call_status column not yet migrated
+            $hasCallStatus = false;
+            $dbRes = $conn->query("SELECT DATABASE() as dbname");
+            if ($dbRes) {
+                $dbRow = $dbRes->fetch_assoc();
+                $dbname = $dbRow['dbname'] ?? '';
+                if (!empty($dbname)) {
+                    $check = $conn->prepare("SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'event_guests' AND COLUMN_NAME = 'call_status'");
+                    if ($check) {
+                        $check->bind_param('s', $dbname);
+                        $check->execute();
+                        $checkRes = $check->get_result();
+                        if ($checkRes) {
+                            $cntRow = $checkRes->fetch_assoc();
+                            $hasCallStatus = ((int)($cntRow['cnt'] ?? 0)) > 0;
+                        }
+                    }
+                }
+            }
+
+            if ($hasCallStatus) {
+                $sql = "SELECT 
+                    g.id, g.name, g.phone_number, g.recipient_msisdn,
+                    g.type, g.card_number, g.card_url, g.arrive_count,
+                    g.wa_message_status, g.sms_message_status,
+                    g.call_status,
+                    COALESCE(NULLIF(g.attendance_feedback, ''), g.call_attendance_feedback) as feedback
+                    FROM event_guests g
+                    WHERE g.event_id = ? AND g.is_deleted = 0";
+            } else {
+                $sql = "SELECT 
+                    g.id, g.name, g.phone_number, g.recipient_msisdn,
+                    g.type, g.card_number, g.card_url, g.arrive_count,
+                    g.wa_message_status, g.sms_message_status,
+                    COALESCE(NULLIF(g.attendance_feedback, ''), g.call_attendance_feedback) as feedback
+                    FROM event_guests g
+                    WHERE g.event_id = ? AND g.is_deleted = 0";
+            }
             $stmt = $conn->prepare($sql);
             $stmt->bind_param('i', $event_id);
             $stmt->execute();
@@ -243,12 +274,8 @@ function getStatusClass($status) {
         return 'success';
     } else if ($status === 'sitoweza kufika') {
         return 'danger';
-    } else if ($status === 'sina uhakika') {
+    } else if ($status === 'sina uhakika' || $status === 'sina uhakika kama nitafika') {
         return 'warning';
-    } else if ($status === 'hapokei/hapatikani') {
-        return 'warning';
-    } else if ($status === 'namba sio sahihi') {
-        return 'danger';
     } else if ($status === 'call again to confirm') {
         return 'info';
     } else if ($status === 'attended') {
@@ -361,6 +388,36 @@ function getStatusClass($status) {
                                         <input type="text" class="form-control" id="event_pin" name="event_pin" 
                                                value="<?php echo isset($_GET['event_pin']) ? htmlspecialchars($_GET['event_pin']) : ''; ?>" required>
                                     </div>
+
+                                <!-- Call Action Update Modal -->
+                                <div class="modal fade" id="callModal" tabindex="-1" aria-labelledby="callModalLabel" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="callModalLabel">Update Call Action</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <input type="hidden" id="callGuestId">
+                                                <div class="mb-3">
+                                                    <label for="callAction" class="form-label">Select Call Action</label>
+                                                    <select class="form-select" id="callAction" required>
+                                                        <option value="Not Called">Not Called</option>
+                                                        <option value="Called And Picked Up">Called And Picked Up</option>
+                                                        <option value="Called And Missed Call">Called And Missed Call</option>
+                                                    </select>
+                                                    <div class="invalid-feedback">
+                                                        Please select a call action
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                                <button type="button" class="btn btn-primary" id="saveCallBtn">Save changes</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 </div>
                                 <div class="col-md-4">
                                     <button type="submit" class="btn btn-primary w-100">
@@ -573,7 +630,8 @@ function getStatusClass($status) {
                                                 'arrive_count' => 'Attended Guests',
                                                 'wa_message_status' => 'WhatsApp',
                                                 'sms_message_status' => 'SMS',
-                                                'feedback' => 'ATTENDANCE FEEDBACK'
+                                                'feedback' => 'Attendance Confirmation',
+                                                'call_status' => 'Call Action'
                                             ];
                                             
                                             // Get column names from the result and filter out recipient_msisdn and id
@@ -650,8 +708,11 @@ function getStatusClass($status) {
                                             }
                                             
                                             // Action button
-                                            echo '<td class="text-nowrap"><button class="btn btn-link p-0 border-0 bg-transparent update-status-btn" data-bs-toggle="modal" data-bs-target="#statusModal" title="' . ($feedback ? 'Update status' : 'Set status') . '">' . 
-                                                 '<i class="bi bi-pencil-square ' . $statusClass . '"></i></button></td>';
+                                            echo '<td class="text-nowrap">'
+                                                . '<button class="btn btn-link p-0 me-2 border-0 bg-transparent update-status-btn" data-bs-toggle="modal" data-bs-target="#statusModal" title="' . ($feedback ? 'Update Attendance Confirmation' : 'Set Attendance Confirmation') . '">'
+                                                . '<i class="bi bi-pencil-square ' . $statusClass . '"></i></button>'
+                                                . ($hasCallStatus ? '<button class="btn btn-link p-0 border-0 bg-transparent update-call-btn" data-bs-toggle="modal" data-bs-target="#callModal" title="Update Call Action"><i class="bi bi-telephone"></i></button>' : '')
+                                                . '</td>';
                                             echo '</tr>';
                                         }
                                     ?>
@@ -662,21 +723,18 @@ function getStatusClass($status) {
                                     <div class="modal-dialog">
                                         <div class="modal-content">
                                             <div class="modal-header">
-                                                <h5 class="modal-title" id="statusModalLabel">Update Call Status</h5>
+                                                <h5 class="modal-title" id="statusModalLabel">Update Attendance Confirmation</h5>
                                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                             </div>
                                             <div class="modal-body">
                                                 <input type="hidden" id="guestId">
                                                 <div class="mb-3">
-                                                    <label for="callStatus" class="form-label">Select Status</label>
+                                                    <label for="callStatus" class="form-label">Select Attendance Confirmation</label>
                                                     <select class="form-select" id="callStatus" required>
                                                         <option value="" selected disabled>-- Select Status --</option>
                                                         <option value="Asante, nitafika">Asante, nitafika</option>
                                                         <option value="Sitoweza kufika">Sitoweza kufika</option>
-                                                        <option value="Sina uhakika">Sina uhakika</option>
-                                                        <option value="Hapokei/Hapatikani">Hapokei/Hapatikani</option>
-                                                        <option value="Namba Sio Sahihi">Namba Sio Sahihi</option>
-                                                        <option value="Call to Confirm">Call to Confirm</option>
+                                                        <option value="Sina uhakika kama nitafika">Sina Uhakika kama nitafika</option>
                                                     </select>
                                                     <div class="invalid-feedback">
                                                         Please select a status
@@ -711,12 +769,8 @@ function getStatusClass($status) {
             return 'success';
         } else if (status === 'sitoweza kufika') {
             return 'danger';
-        } else if (status === 'sina uhakika') {
+        } else if (status === 'sina uhakika' || status === 'sina uhakika kama nitafika') {
             return 'warning';
-        } else if (status === 'hapokei/hapatikani') {
-            return 'warning';
-        } else if (status === 'namba sio sahihi') {
-            return 'danger';
         } else if (status === 'call again to confirm') {
             return 'info';
         } else if (status === 'attended') {
@@ -728,6 +782,16 @@ function getStatusClass($status) {
         } else {
             return 'secondary';
         }
+    }
+
+    // Map for call action display classes
+    function getCallActionClass(status) {
+        if (!status) return 'secondary';
+        status = status.toUpperCase().trim();
+        if (status === 'NOT CALLED') return 'secondary';
+        if (status === 'CALLED AND PICKED UP') return 'success';
+        if (status === 'CALLED AND MISSED CALL') return 'warning';
+        return 'secondary';
     }
 
     // Function to refresh the attendance summary
@@ -788,8 +852,9 @@ function getStatusClass($status) {
             });
         }
 
-        // Initialize the modal once
+        // Initialize modals once
         var statusModal = new bootstrap.Modal(document.getElementById('statusModal'));
+        var callModal = new bootstrap.Modal(document.getElementById('callModal'));
 
         // Show status modal
         $(document).on('click', '.update-status-btn', function() {
@@ -863,6 +928,51 @@ function getStatusClass($status) {
                 error: function() {
                     $saveBtn.prop('disabled', false).html(originalText);
                     alert('Error updating status. Please try again.');
+                }
+            });
+        });
+
+        // Show call action modal
+        $(document).on('click', '.update-call-btn', function() {
+            var $row = $(this).closest('tr');
+            var guestId = $row.data('guest-id');
+            $('#callGuestId').val(guestId);
+            callModal.show();
+        });
+
+        // Save call action
+        $('#saveCallBtn').click(function() {
+            var guestId = $('#callGuestId').val();
+            var callStatus = $('#callAction').val();
+            if (!callStatus) {
+                alert('Please select a call action');
+                return;
+            }
+            var $btn = $(this);
+            var originalText = $btn.html();
+            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...');
+            $.ajax({
+                url: 'update_call_action.php',
+                type: 'POST',
+                data: { guest_id: guestId, call_status: callStatus },
+                dataType: 'json',
+                success: function(resp) {
+                    $btn.prop('disabled', false).html(originalText);
+                    if (resp.success) {
+                        // Hide modal before navigating to avoid aria-hidden focus warning
+                        try { callModal.hide(); } catch (e) {}
+                        var scrollPosition = window.scrollY || document.documentElement.scrollTop;
+                        sessionStorage.setItem('scrollPosition', scrollPosition);
+                        var eventPin = '<?php echo $event_pin; ?>';
+                        sessionStorage.setItem('eventPin', eventPin);
+                        window.location.href = 'detailed_report.php?event_pin=' + encodeURIComponent(eventPin);
+                    } else {
+                        alert('Error updating call action: ' + (resp.message || 'Unknown error'));
+                    }
+                },
+                error: function() {
+                    $btn.prop('disabled', false).html(originalText);
+                    alert('Error updating call action. Please try again.');
                 }
             });
         });

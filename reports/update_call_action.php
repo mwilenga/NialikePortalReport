@@ -3,28 +3,24 @@ require_once dirname(__DIR__) . '/db.php';
 
 header('Content-Type: application/json');
 
-// Check if the request is POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
     exit;
 }
 
-// Get POST data
 $guest_id = isset($_POST['guest_id']) ? intval($_POST['guest_id']) : 0;
-$status = isset($_POST['status']) ? trim($_POST['status']) : '';
+$call_status = isset($_POST['call_status']) ? trim($_POST['call_status']) : '';
 
-// Validate input
-if ($guest_id <= 0 || empty($status)) {
+if ($guest_id <= 0 || $call_status === '') {
     echo json_encode(['success' => false, 'message' => 'Invalid input']);
     exit;
 }
 
 try {
-    // Connect to database
     $conn = connectToDatabase();
-    
-    // First, get the event_pin for this guest
+
+    // Fetch event_pin for redirect context
     $sql = "SELECT ep.event_pin 
             FROM event_guests eg 
             JOIN event_pins ep ON eg.event_id = ep.event_id 
@@ -32,39 +28,32 @@ try {
     $stmt = $conn->prepare($sql);
     $stmt->bind_param('i', $guest_id);
     $stmt->execute();
-    $result = $stmt->get_result();
-    
-    if ($result->num_rows === 0) {
+    $res = $stmt->get_result();
+
+    if ($res->num_rows === 0) {
         throw new Exception('Guest not found');
     }
-    
-    $row = $result->fetch_assoc();
+
+    $row = $res->fetch_assoc();
     $event_pin = $row['event_pin'];
-    
-    // Now update the attendance confirmation (repurposed endpoint)
-    $sql = "UPDATE event_guests SET attendance_feedback = ? WHERE id = ?";
+
+    // Update call_status (new column)
+    $sql = "UPDATE event_guests SET call_status = ? WHERE id = ?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param('si', $status, $guest_id);
-    
+    $stmt->bind_param('si', $call_status, $guest_id);
+
     if ($stmt->execute()) {
-        // Return success response with redirect URL
-        $redirectUrl = 'detailed_report.php?event_pin=' . urlencode($event_pin);
         echo json_encode([
             'success' => true,
-            'redirect' => $redirectUrl
+            'redirect' => 'detailed_report.php?event_pin=' . urlencode($event_pin)
         ]);
     } else {
-        throw new Exception('Failed to update status');
+        throw new Exception('Failed to update call action');
     }
-    
+
     $stmt->close();
     $conn->close();
-    
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode([
-        'success' => false, 
-        'message' => 'Database error: ' . $e->getMessage()
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }
-?>
