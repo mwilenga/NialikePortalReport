@@ -513,16 +513,16 @@ function getStatusClass($status) {
                                     // Get attendance status summary from database
                                     $attendance_sql = "SELECT 
                                         COALESCE(
-                                            NULLIF(attendance_feedback, ''), 
                                             NULLIF(call_attendance_feedback, ''), 
+                                            NULLIF(attendance_feedback, ''), 
                                             'not_specified'
                                         ) as status,
-                                        COALESCE(SUM(card_count), 0) as count
+                                        COUNT(*) as count
                                     FROM event_guests 
-                                    WHERE event_id = ? AND (is_deleted <> 1 OR is_deleted IS NULL)
+                                    WHERE event_id = ? AND is_deleted = 0
                                     GROUP BY COALESCE(
-                                        NULLIF(attendance_feedback, ''), 
                                         NULLIF(call_attendance_feedback, ''), 
+                                        NULLIF(attendance_feedback, ''), 
                                         'not_specified'
                                     )";
                                     

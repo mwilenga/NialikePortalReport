@@ -60,16 +60,16 @@ if ($show_results) {
                 // 4. Get attendance summary
                 $attendance_sql = "SELECT 
                                     COALESCE(
-                                        NULLIF(call_attendance_feedback, ''), 
                                         NULLIF(attendance_feedback, ''), 
+                                        NULLIF(call_attendance_feedback, ''), 
                                         'not_specified'
                                     ) as status,
-                                    COUNT(*) as count
+                                    COALESCE(SUM(card_count), 0) as count
                                   FROM event_guests 
-                                  WHERE event_id = ? AND is_deleted = 0
+                                  WHERE event_id = ? AND (is_deleted <> 1 OR is_deleted IS NULL)
                                   GROUP BY COALESCE(
-                                      NULLIF(call_attendance_feedback, ''), 
                                       NULLIF(attendance_feedback, ''), 
+                                      NULLIF(call_attendance_feedback, ''), 
                                       'not_specified'
                                   )";
                 
