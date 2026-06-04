@@ -63,7 +63,7 @@ if ($show_results && !empty($event_pin)) {
                     g.call_status,
                     COALESCE(NULLIF(g.attendance_feedback, ''), g.call_attendance_feedback) as feedback
                     FROM event_guests g
-                    WHERE g.event_id = ? AND g.is_deleted = 0";
+                    WHERE g.event_id = ? AND (g.is_deleted <> 1 OR g.is_deleted IS NULL)";
             } else {
                 $sql = "SELECT 
                     g.id, g.name, g.phone_number, g.recipient_msisdn,
@@ -71,7 +71,7 @@ if ($show_results && !empty($event_pin)) {
                     g.wa_message_status, g.sms_message_status,
                     COALESCE(NULLIF(g.attendance_feedback, ''), g.call_attendance_feedback) as feedback
                     FROM event_guests g
-                    WHERE g.event_id = ? AND g.is_deleted = 0";
+                    WHERE g.event_id = ? AND (g.is_deleted <> 1 OR g.is_deleted IS NULL)";
             }
             $stmt = $conn->prepare($sql);
             $stmt->bind_param('i', $event_id);
@@ -96,15 +96,17 @@ if ($show_results && !empty($event_pin)) {
             $total_guests_result = $total_guests_stmt->get_result()->fetch_assoc();
             $total_guests = (int)($total_guests_result['total_guests'] ?? 0);
             
+            $total_cards_sql = "SELECT COUNT(*) as total_cards FROM event_guests WHERE event_id = ? AND (is_deleted <> 1 OR is_deleted IS NULL)";
+            $total_cards_stmt = $conn->prepare($total_cards_sql);
+            $total_cards_stmt->bind_param('i', $event_id);
+            $total_cards_stmt->execute();
+            $total_cards_result = $total_cards_stmt->get_result()->fetch_assoc();
+            $total_cards = (int)($total_cards_result['total_cards'] ?? 0);
+            
             // Store all rows for later use
             $all_guests = [];
             while ($row = $result->fetch_assoc()) {
                 $all_guests[] = $row;
-                
-                // Count cards (non-null card numbers)
-                if (!empty($row['card_number'])) {
-                    $total_cards++;
-                }
                 
                 // Count not_attended based on attendance_feedback
                 if (empty($row['attendance_feedback']) || strtolower($row['attendance_feedback']) !== 'attended') {

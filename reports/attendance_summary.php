@@ -34,10 +34,10 @@ if ($show_results) {
             $event_id = $event['event_id'];
             $event_name = $event['name'] ?? 'Event';
             
-            // 2. Get total guests (sum of card_count) and total cards (count of non-null card_numbers)
+            // 2. Get total guests (sum of card_count) and total cards (count of guest records)
             $count_sql = "SELECT 
                             COALESCE(SUM(card_count), 0) as total_guests,
-                            SUM(CASE WHEN card_number IS NOT NULL AND card_number != '' THEN 1 ELSE 0 END) as total_cards
+                            COUNT(*) as total_cards
                           FROM event_guests 
                           WHERE event_id = ? AND (is_deleted <> 1 OR is_deleted IS NULL)";
             $count_stmt = $conn->prepare($count_sql);
